@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the manuscript below."
+title: "How Much Does Dirty Data Cost? A Controlled Study of Dataset Defects on Surface-Defect Classification"
+authors:
+  - family-names: "[Author]"
+    given-names: ""
+year: 2026
+license: MIT
+type: software
