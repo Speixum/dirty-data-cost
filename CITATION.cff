@@ -1,9 +1,18 @@
 cff-version: 1.2.0
-message: "If you use this code, please cite the manuscript below."
-title: "How Much Does Dirty Data Cost? A Controlled Study of Dataset Defects on Surface-Defect Classification"
+message: "If you use this code or the dataset versions, please cite this project."
+title: "Quantifying the Cost of Dirty Data: A Controlled Study of Dataset Defects on Surface-Defect Classification"
 authors:
-  - family-names: "[Author]"
-    given-names: ""
+  - family-names: "Zhang"
+    given-names: "Xu"
+    orcid: "https://orcid.org/0009-0003-3994-2812"
+    affiliation: "Independent Researcher, Mudanjiang, China"
 year: 2026
 license: MIT
 type: software
+repository-code: "https://github.com/Speixum/dirty-data-cost"
+keywords:
+  - dataset quality
+  - data-centric evaluation
+  - controlled corruption
+  - surface defect classification
+  - training-free quality score

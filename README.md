@@ -1,82 +1,113 @@
-# How Much Does Dirty Data Cost?
+# Quantifying the Cost of Dirty Data
 
-Code, dataset-version metadata and result files for the paper
+**How much accuracy does a dirty dataset cost — and can we predict it without training?**
 
-> **How Much Does Dirty Data Cost? A Controlled Study of Dataset Defects on
-> Surface-Defect Classification**
+This project builds **26 versions** of one industrial image dataset, each carrying a known
+defect at a known strength, trains one identical ResNet-18 per version, and measures what the
+defect actually costs. It then asks whether a **training-free quality score** can rank those
+versions the same way the measured accuracy does.
 
-We do not propose a new model. We quantify how data defects propagate to downstream
-performance, and we test whether a *training-free* quality score can predict that loss.
+The model is only a ruler. The object of study is the data.
 
-Starting from the public NEU-CLS benchmark (six classes of hot-rolled steel surface defects),
-we build **26 dataset versions**: five defect families (Gaussian noise, salt-and-pepper noise,
-JPEG compression, motion blur, systematic label confusion) at four severity levels each, plus
-a cumulative series in which defect types are stacked one by one. One ResNet-18 is trained per
-version under an identical budget, so differences in test accuracy are attributable to the
-injected defect.
+---
 
-| Result | Value |
+## Headline results
+
+| Question | Answer |
 |---|---|
-| Clean reference (NEU-CLS) | 99.63% test accuracy |
-| Most expensive defect | Gaussian noise, sigma = 32: **-67.41 pp** |
-| Cheapest defect | 15% systematic label confusion: **-1.11 pp** |
-| Stacked defects | not additive: 46.85% -> 78.33% as more defects are added |
-| Fidelity score vs accuracy | Spearman rho = **-0.011** (fails) |
-| Reference-model agreement (RMA) vs accuracy | Spearman rho = **0.825** (p = 2.1e-7) |
-| RMA used as a screening gate | precision **1.00**, recall **0.94**, F1 0.97 |
-| Repair loop (worst version) | 32.22% -> **99.63%** by replacing the worst-scored 20% of files |
-| Second dataset (KolektorSDD2) | the same corruptions cost at most **2.29 pp** |
+| Clean reference (NEU-CLS) | **99.63%** test accuracy |
+| Most expensive defect | Gaussian noise, σ = 32 → **−67.41 pp** |
+| Cheapest defect | 15% systematic label confusion → **−1.11 pp** |
+| Are stacked defects additive? | **No.** Adding blur + compression to a noisy version *raises* accuracy 46.85% → 78.33%, because those operations erase the high-frequency noise injected first |
+| Does a fidelity score (LC × BAL × SHP) work? | **No.** Spearman ρ = −0.011 against accuracy |
+| Does reference-model agreement (RMA) work? | **Yes.** Spearman ρ = **0.825**, p = 2.1e-7, n = 26 |
+| Can RMA work as a screening gate? | precision **1.00**, recall **0.94** at a −5 pp threshold |
+| Does acting on the score help? | Replacing the worst-scored 20% of training files lifts the worst version 32.22% → **99.63%** |
+| Does the cost table transfer to another dataset? | **No.** The same corruptions cost ≤ 2.29 pp on KolektorSDD2 — cost must be measured per dataset |
+
+## What it looks like
+
+**Cost depends far more on defect type than on defect strength**
+
+![Accuracy vs defect severity](figs/fig5_family_curves.png)
+
+**Accuracy drop per family and level (pp vs clean)**
+
+![Accuracy drop](figs/fig7_drop_bars.png)
+
+**A training-free score that ranks versions like the measured accuracy does**
+
+![Score vs accuracy](figs/fig4_q_vs_acc.png)
+
+**The score also tracks the repair**
+
+![Repair](figs/fig10_repair.png)
+
+---
+
+## How it works
+
+1. **One fixed split.** NEU-CLS (6 classes × 300 hot-rolled steel surface images), stratified
+   70/15/15 with seed 42 — 1260 / 270 / 270. Every version reuses this split, so no version
+   can win by getting an easier test set.
+2. **Injection is deterministic and versioned.** Each version keeps its images, label file,
+   `manifest.json` and `problems.md`; the catalogue indexes all 26.
+3. **One identical training budget.** ResNet-18 (ImageNet), 224×224, batch 64, AdamW
+   (lr 3e-4, wd 1e-4), cosine, 6 epochs, no augmentation, checkpoint chosen on validation,
+   test evaluated once. Differences are therefore attributable to the defect, not to
+   optimisation luck.
+4. **Scoring without training.** LC = label consistency of k-NN in ImageNet embeddings;
+   BAL = class-balance entropy; SHP = sharpness relative to a clean reference. RMA =
+   agreement between a clean reference network's predictions and the delivered labels.
+5. **Verification.** Rank correlations, a gate analysis, a repair loop, a second dataset and a
+   second backbone, plus `src/verify_paper_numbers.py` which re-derives every reported number
+   from the result files.
+
+## Reproduce
+
+```bash
+pip install -r requirements.txt
+# put NEU-CLS images in data/neu-cls/ (or set NEU_DATA_DIR; see docs/DATASETS.md)
+python src/build_versions.py         # ~3 min, writes data/versions/
+python src/run_versions.py           # 30 runs, ~5.5 min each on a 4 GB laptop GPU
+python src/q_v2.py                   # reference model + one forward pass per version
+python src/make_results.py           # tables, rank correlations, figures
+python src/verify_paper_numbers.py   # cross-check reported numbers against results/
+```
 
 ## Repository layout
 
 ```
-src/                     all experiment code (build versions, train, score, analyse, plot)
-data/splits/             the fixed stratified 70/15/15 split (seed 42)
+src/                     experiment code (build versions, train, score, analyse, plot)
+data/splits/             fixed stratified 70/15/15 split (seed 42)
 data/versions/Vxx/       per-version metadata: manifest.json, labels.csv, problems.md
-results/versions/        one JSON per training run (accuracy, quality scores, timing)
-results/ksdd2/           the second-dataset runs
-paper/figs/              result figures only (the manuscript is not published here)
-docs/                    datasets, reproduction, notes
+results/versions/        one JSON per training run (accuracy, scores, timing)
+results/ksdd2/           second-dataset runs
+figs/                    result figures
+docs/                    datasets, reproduction notes, findings
 ```
 
-**The dataset images are not in this repository.** They are third-party benchmarks with their
-own terms. See [docs/DATASETS.md](docs/DATASETS.md) for the download links, the checksums we
-observed, and where to put the files so that the code finds them. What *is* included is
-everything we produced: the split, the per-version label files, the manifests, and all result
-files, so every number in the paper can be re-derived.
+**Dataset images are not redistributed here.** NEU-CLS and KolektorSDD2 carry their own
+terms; see [docs/DATASETS.md](docs/DATASETS.md) for links and expected layout. What is
+included is everything this project produced: the split, per-version label files, manifests
+and all result files, so every number can be re-derived.
 
-## Quick start
+## Licence
 
-```bash
-pip install -r requirements.txt
-# 1. put NEU-CLS images in data/neu-cls/  (or export NEU_DATA_DIR=/your/path; see docs/DATASETS.md)
-python src/build_versions.py      # ~3 min, writes data/versions/ (~1.7 GB of images)
-python src/run_versions.py        # 30 runs, ~5.5 min each on a 4 GB laptop GPU
-python src/q_v2.py                # reference model + one forward pass per version
-python src/make_results.py        # tables, rank correlations, figures
-python src/verify_paper_numbers.py  # cross-check the reported numbers against results/
-```
-
-Training budget is identical everywhere: ResNet-18 (ImageNet weights), 224x224, batch 64,
-AdamW (lr 3e-4, wd 1e-4), cosine schedule, 6 epochs, no augmentation, checkpoint selected on
-the validation split, test evaluated once.
-
-## Licence and data terms
-
-Code: MIT (see `LICENSE`). Result files, manifests and label files: CC BY 4.0.
-NEU-CLS and KolektorSDD2 remain under their own terms; their images are not redistributed here.
+Code MIT (`LICENSE`); result files, manifests and label files CC BY 4.0. The two benchmark
+datasets remain under their original licences.
 
 ## Citation
 
 ```
-@misc{dirtydatacost2026,
-  title  = {How Much Does Dirty Data Cost? A Controlled Study of Dataset Defects on
+@misc{zhang2026dirtydata,
+  title  = {Quantifying the Cost of Dirty Data: A Controlled Study of Dataset Defects on
             Surface-Defect Classification},
-  author = {[Author]},
+  author = {Xu Zhang},
   year   = {2026},
-  note   = {Manuscript under review}
+  url    = {https://github.com/Speixum/dirty-data-cost}
 }
 ```
 
-If you use the datasets themselves, cite the original papers: Song & Yan (2013) for NEU-CLS
-and Bozic, Tabernik & Skocaj (2021) for KolektorSDD2.
+If you use the datasets, cite the originals: Song & Yan (2013) for NEU-CLS; Bozic, Tabernik &
+Skocaj (2021) for KolektorSDD2.
